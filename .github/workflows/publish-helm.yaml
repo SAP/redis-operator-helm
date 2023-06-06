@@ -1,0 +1,112 @@
+name: Publish Helm
+
+on:
+  release:
+    types: [published]
+
+env:
+  HELM_VERSION: v3.11.3
+  CHART_DIR: chart
+  REGISTRY: ghcr.io
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  publish-to-pages:
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    concurrency:
+      group: "pages"
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.publish-index.outputs.page_url }}
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: azure/setup-helm@v3
+      with:
+       version: ${{ env.HELM_VERSION }}
+
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Checkout
+      uses: actions/checkout@v3
+      with:
+        ref: helm-index
+        path: index
+
+    - name: Setup Pages
+      uses: actions/configure-pages@v3
+
+    - name: Create package
+      run: |
+        helm package --version ${{ github.event.release.tag_name }} $CHART_DIR
+
+    - name: Create index
+      run: |
+        helm repo index --url ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }} --merge ./index/index.yaml .
+        mv index.yaml index
+        cd index
+        git config user.name github-actions
+        git config user.email github-actions@github.com
+        git add index.yaml
+        git commit -m "Release ${{ github.event.release.tag_name }}"
+        git push
+
+    - name: Upload package
+      run: |
+        upload_url="${{ github.event.release.upload_url }}"
+        upload_url=${upload_url%%\{*\}}
+        chart_name=$(yq .name $CHART_DIR/Chart.yaml)
+        file=$chart_name-${{ github.event.release.tag_name }}.tgz
+        echo "Uploading $file to $upload_url ..."
+        curl -sSf \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Content-Type: $(file -b --mime-type $file)" \
+          --data-binary @$file \
+          "$upload_url?name=$(basename $file)"
+
+    - name: Upload index
+      uses: actions/upload-pages-artifact@v1
+      with:
+        path: index
+
+    - name: Publish index
+      id: publish-index
+      uses: actions/deploy-pages@v2
+
+  publish-to-packages:
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: azure/setup-helm@v3
+      with:
+       version: ${{ env.HELM_VERSION }}
+
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Create package
+      run: |
+        helm package --version ${{ github.event.release.tag_name }} $CHART_DIR
+
+    - name: Login to the OCI registry
+      run: |
+        helm --registry-config $RUNNER_TEMP/helm-config.json registry login $REGISTRY -u ${{ github.actor }} --password-stdin <<< ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload package
+      run: |
+        chart_name=$(yq .name $CHART_DIR/Chart.yaml)
+        file=$chart_name-${{ github.event.release.tag_name }}.tgz
+        repository=${{ github.repository }}
+        helm --registry-config $RUNNER_TEMP/helm-config.json push $file oci://$REGISTRY/${repository,,}
