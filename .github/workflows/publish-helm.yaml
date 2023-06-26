@@ -110,3 +110,22 @@ jobs:
         file=$chart_name-${{ github.event.release.tag_name }}.tgz
         repository=${{ github.repository }}
         helm --registry-config $RUNNER_TEMP/helm-config.json push $file oci://$REGISTRY/${repository,,}
+
+    - name: Determine version bump value
+      id: version-bump-value
+      uses: ./.github/actions/determine-bump-level
+      with:
+        token: ${{ secrets.WORKFLOW_USER_GH_TOKEN }}
+
+    - name: Create a workflow_dispatch event in redis-operator-cop repo
+      run: |
+        curl --request POST \
+          --header "Accept: application/vnd.github+json" \
+          --header "Authorization: Bearer ${{ secrets.WORKFLOW_USER_GH_TOKEN }}" \
+          --url https://api.github.com/repos/sap/redis-operator-cop/actions/workflows/update-content.yaml/dispatches \
+          --data '{
+            "ref":"main",
+            "inputs":{
+              "version-bump":"${{ steps.version-bump-value.outputs.bump-level }}"
+              }
+            }'
