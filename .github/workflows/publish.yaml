@@ -1,0 +1,242 @@
+name: Publish artifacts
+
+on:
+  release:
+    types: [published]
+
+# note: we do not use any concurrency here, in order to avoid queued release workflows being cancelled by
+# higher priority push/pull_request workflows
+
+env:
+  HELM_VERSION: v3.11.3
+  SEMVER_VERSION: 3.4.0
+  REGISTRY: ghcr.io
+  CHART_DIRECTORY: chart
+  # COP_REPOSITORY:
+  # COP_CHART_BASE_DIRECTORY:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  validate:
+    name: Run validations
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Validate chart version
+      run: |
+        chart_version=$(yq .version $CHART_DIRECTORY/Chart.yaml)
+        if [ "$chart_version" != "${{ github.event.release.tag_name }}" ]; then
+          >&1 echo "Version in $CHART_DIRECTORY/Chart.yaml ($chart_version) does not match release version (${{ github.event.release.tag_name }})."
+          exit 1
+        fi
+
+  publish-to-pages:
+    name: Publish chart to github pages
+    runs-on: ubuntu-22.04
+    needs: validate
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    concurrency:
+      group: "pages"
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.publish-index.outputs.page_url }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        ref: helm-index
+        path: index
+
+    - uses: azure/setup-helm@v3
+      with:
+       version: ${{ env.HELM_VERSION }}
+
+    - name: Setup Pages
+      uses: actions/configure-pages@v3
+
+    - name: Create package
+      run: |
+        helm package --version ${{ github.event.release.tag_name }} $CHART_DIRECTORY
+
+    - name: Create index
+      run: |
+        helm repo index --url ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }} --merge ./index/index.yaml .
+        mv index.yaml index
+        cd index
+        git config user.name github-actions
+        git config user.email github-actions@github.com
+        git add index.yaml
+        git commit -m "Release ${{ github.event.release.tag_name }}"
+        git push
+
+    - name: Upload package
+      run: |
+        upload_url="${{ github.event.release.upload_url }}"
+        upload_url=${upload_url%%\{*\}}
+        chart_name=$(yq .name $CHART_DIRECTORY/Chart.yaml)
+        file=$chart_name-${{ github.event.release.tag_name }}.tgz
+        echo "Uploading $file to $upload_url ..."
+        curl -sSf \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${{ github.token }}" \
+          -H "Content-Type: $(file -b --mime-type $file)" \
+          --data-binary @$file \
+          "$upload_url?name=$(basename $file)"
+
+    - name: Upload index
+      uses: actions/upload-pages-artifact@v1
+      with:
+        path: index
+
+    - name: Publish index
+      id: publish-index
+      uses: actions/deploy-pages@v2
+
+  publish-to-packages:
+    name: Publish chart to github packages
+    runs-on: ubuntu-22.04
+    needs: validate
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - uses: azure/setup-helm@v3
+      with:
+       version: ${{ env.HELM_VERSION }}
+
+    - name: Create package
+      run: |
+        helm package --version ${{ github.event.release.tag_name }} $CHART_DIRECTORY
+
+    - name: Login to the OCI registry
+      run: |
+        helm --registry-config $RUNNER_TEMP/helm-config.json registry login $REGISTRY -u ${{ github.actor }} --password-stdin <<< ${{ github.token }}
+
+    - name: Upload package
+      run: |
+        chart_name=$(yq .name $CHART_DIRECTORY/Chart.yaml)
+        file=$chart_name-${{ github.event.release.tag_name }}.tgz
+        repository=${{ github.repository }}
+        helm --registry-config $RUNNER_TEMP/helm-config.json push $file oci://$REGISTRY/${repository,,}
+
+  update-cop:
+    name: Update component operator
+    runs-on: ubuntu-22.04
+    needs: validate
+
+    steps:
+    - name: Prepare
+      id: prepare
+      run: |
+        cop_repository=$COP_REPOSITORY
+        if [ -z "$cop_repository" ]; then
+          cop_repository=${GITHUB_REPOSITORY/-helm/-cop}
+        fi
+        echo "cop_repository=$cop_repository" >> $GITHUB_OUTPUT
+
+        cop_chart_base_directory=$COP_CHART_BASE_DIRECTORY
+        if [ -z "$cop_chart_base_directory" ]; then
+          cop_chart_base_directory=pkg/operator/data/charts
+        fi
+        echo "cop_chart_base_directory=$cop_chart_base_directory" >> $GITHUB_OUTPUT
+
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Checkout component operator repository
+      uses: actions/checkout@v3
+      with:
+        repository: ${{ steps.prepare.outputs.cop_repository }}
+        path: cop-repository
+        token: ${{ secrets.WORKFLOW_USER_GH_TOKEN }}
+
+    - name: Setup semver
+      uses: ./.github/actions/setup-semver
+      with:
+        version: ${{ env.SEMVER_VERSION }}
+        install-directory: ${{ runner.temp }}/bin
+
+    - name: Update component operator repository
+      id: update
+      run: |
+        chart_name=$(yq .name $CHART_DIRECTORY/Chart.yaml)
+
+        cd cop-repository
+        cop_chart_base_directory=${{ steps.prepare.outputs.cop_chart_base_directory }}
+
+        old_version=$(yq .version $cop_chart_base_directory/$chart_name/Chart.yaml)
+        if [ "$(semver validate ${old_version/#[vV]/_})" != valid ]; then
+          >&1 echo "Found invalid current chart version ($old_version) in $cop_chart_base_directory/$chart_name/Chart.yaml)."
+          exit 1
+        fi
+
+        new_version=${{ github.event.release.tag_name }}
+        if [ "$(semver validate ${new_version/#[vV]/_})" != valid ]; then
+          >&1 echo "Invalid target chart version ($new_version)."
+          exit 1
+        fi
+
+        if [ $(semver compare $new_version $old_version) -lt 0 ]; then
+          echo "Target chart version ($new_version) is lower than current chart version ($old_version); skipping update."
+          exit 0
+        fi
+
+        version_bump=$(semver diff $new_version $old_version)
+        echo "Found chart version bump: $version_bump."
+        if [ "$version_bump" != major ] && [ "$version_bump" != minor ]; then
+          version_bump=patch
+        fi
+        echo "Performing component operator version bump: $version_bump ..."
+
+        echo "Updating chart ($cop_chart_base_directory/$chart_name) ..."
+        rm -rf $cop_chart_base_directory/$chart_name
+        cp -r ../$CHART_DIRECTORY $cop_chart_base_directory/$chart_name
+
+        if [ -z "$(git status --porcelain)" ]; then
+          echo "Nothing has changed; skipping update ..."
+          exit 0
+        fi
+
+        git config user.name "${{ vars.WORKFLOW_USER_NAME }}"
+        git config user.email "${{ vars.WORKFLOW_USER_EMAIL }}"
+        git add -A
+        git commit -F- <<END
+        Update chart (triggered by operator helm release $new_version)
+        Repository: ${{ github.repository }}
+        Release: ${{ github.event.release.tag_name }}
+        Commit: ${{ github.sha }}
+        END
+        git push
+
+        echo "version_bump=$version_bump" >> $GITHUB_OUTPUT
+
+    - name: Release component operator repository
+      if: steps.update.outputs.version_bump != ''
+      uses: benc-uk/workflow-dispatch@v1
+      with:
+        repo: ${{ steps.prepare.outputs.cop_repository }}
+        workflow: release.yaml
+        ref: main
+        token: ${{ secrets.WORKFLOW_USER_GH_TOKEN }}
+        inputs: '{ "version-bump": "${{ steps.update.outputs.version_bump}}" }'
+
+
+

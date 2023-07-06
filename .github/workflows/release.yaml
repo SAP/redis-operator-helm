@@ -1,19 +1,10 @@
-name: Release Helm
+name: Trigger release
 
 on:
-  workflow_run:
-    workflows: [Update versions in chart/Chart.yaml]
-    types:
-    - completed
-
   workflow_dispatch:
     inputs:
       version-bump:
         description: 'Whether to bump major, minor or patch version'
-        # For exmaple:
-          # Bump major version (i.e. current_version=v1.2.3 --> new_version=v2.0.0)'
-          # Bump minor version (i.e. current_version=v1.2.3 --> new_version=v1.3.0)
-          # Bump patch version (i.e. current_version=v1.2.3 --> new_version=v1.2.4)
         required: false
         default: patch
         type: choice
@@ -22,108 +13,126 @@ on:
         - minor
         - patch
       desired-version:
-        description: 'Version to be released'
+        description: 'Version to be released; if specified, version-bump will be ignored'
         required: false
         default: ''
-      ref:
-        description: 'The branch, tag, or SHA to release'
-        required: false
-        default: 'main'
+
+concurrency: release
+
+env:
+  TAG_PREFIX: ""
+  INITIAL_TAG: v0.1.0
+  SEMVER_VERSION: 3.4.0
+  CHART_DIRECTORY: chart
 
 defaults:
   run:
     shell: bash
 
 jobs:
-  release-helm:
-    name: Release Helm
+  release:
+    name: Trigger release
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
-    runs-on: ubuntu-22.04
+
+    # TODO: ensure that github.ref is not refs/tags/*
+    # TODO: maybe even ensure that github.ref == refs/heads/main
     steps:
-    - name: Checkout
+    - name: Checkout repository
       uses: actions/checkout@v3
       with:
         token: ${{ secrets.WORKFLOW_USER_GH_TOKEN }}
 
-    - name: Get current version
-      id: get_version
-      run: echo "chart_version=$(yq eval '.version' chart/Chart.yaml)" >> $GITHUB_OUTPUT
+    - name: Setup semver
+      uses: ./.github/actions/setup-semver
+      with:
+        version: ${{ env.SEMVER_VERSION }}
+        install-directory: ${{ runner.temp }}/bin
 
-    - name: Check existence of current chart version release
-      id: check_release_existence
+    - name: Determine current release
+      id: get_current_release
+      uses: ./.github/actions/get-highest-tag
+      with:
+        prefix: ${{ env.TAG_PREFIX }}
+
+    - name: Determine target release
+      id: get_target_release
       run: |
-        curl_rc=$(
-          curl --silent \
-            --request GET \
-            --output /dev/null \
-            --write-out "%{http_code}" \
-            --header "Accept: application/vnd.github+json" \
-            --header "Authorization: Bearer ${{ secrets.WORKFLOW_USER_GH_TOKEN }}" \
-            --url https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ steps.get_version.outputs.chart_version }}
-          )
-        echo "curl_output=${curl_rc}" >> $GITHUB_OUTPUT
+        desired_version=${{ inputs.desired-version }}
+        current_version=${{ steps.get_current_release.outputs.version }}
+        version_bump=${{ inputs.version-bump }}
 
-        if [[ ${curl_rc} -eq 404 ]]; then
-          echo "${{ steps.get_version.outputs.chart_version }} Github release does not yet exist. Version bump will be ignored."
-          echo "curl_output=${curl_rc}" >> $GITHUB_OUTPUT
-        elif [[ ${curl_rc} -eq 200 ]]; then
-          echo "No change in Chart.yaml version detected. Already existing Github release: ${{ steps.get_version.outputs.chart_version }}"
-          echo "curl_output=${curl_rc}" >> $GITHUB_OUTPUT
+        if [ -z "$desired_version" ]; then
+          case $version_bump in
+            major|minor|patch)
+              # ok
+              ;;
+            *)
+              >&1 echo "Invalid input: version-bump ($version_bump)."
+              exit 1
+          esac
+          if [ -z "$current_version" ]; then
+            version=${INITIAL_TAG/#$TAG_PREFIX/}
+            tag=$INITIAL_TAG
+          else
+            version=$(semver bump $version_bump $current_version)
+            tag=$TAG_PREFIX$version
+          fi
         else
-          echo "Check existence of current chart's version release step failed to return 200 or 404!"
-          echo "Return code:"
-          echo ${curl_rc}
-          exit 1
+          if [[ $desired_version =~ ^$TAG_PREFIX([0-9].*)$ ]]; then
+            version=${BASH_REMATCH[1]}
+            tag=$desired_version
+          else
+            >&1 echo "Invalid input: desired-version ($desired_version) should start with $TAG_PREFIX."
+            exit 1
+          fi
+          if [ "$(semver validate $version)" != valid ]; then
+            >&1 echo "Invalid input: desired-version ($version) is not a valid semantic version."
+            exit 1
+          fi
+          if [ "$(semver compare $version $current_version)" -le 0 ]; then
+            >&1 echo "Invalid input: desired-version ($version) should be higher than current version ($current_version)."
+            exit 1
+          fi
         fi
 
-    - name: Bump version
-      uses: actions-ecosystem/action-bump-semver@v1
-      if: steps.check_release_existence.outputs.curl_output == 200 && github.event_name == 'workflow_dispatch' && inputs.desired-version == ''
-      id: bump_semver
-      with:
-        current_version: ${{ steps.get_version.outputs.chart_version }}
-        level: ${{ inputs.version-bump }}
+        echo "Target version: $version"
+        echo "Target tag: $tag"
+        echo "version=$version" >> $GITHUB_OUTPUT
+        echo "tag=$tag" >> $GITHUB_OUTPUT
 
-    - name: Prepare release version
-      id: prepare_version
+    - name: Update chart version
       run: |
-        if "${{ github.event_name == 'workflow_run' || steps.check_release_existence.outputs.curl_output == 404 }}"
-        then
-          echo "version=${{ steps.get_version.outputs.chart_version }}" >> $GITHUB_OUTPUT
-          echo "ref=main" >> $GITHUB_OUTPUT
-        elif "${{ github.event_name == 'workflow_dispatch' && inputs.desired-version != '' && steps.check_release_existence.outputs.curl_output == 200 }}"
-        then
-          echo "version=${{ inputs.desired-version }}" >> $GITHUB_OUTPUT
-          echo "ref=${{ inputs.ref }}" >> $GITHUB_OUTPUT
-        elif "${{ github.event_name == 'workflow_dispatch' && inputs.desired-version == '' && steps.check_release_existence.outputs.curl_output == 200 }}"
-        then
-          echo "version=${{ steps.bump_semver.outputs.new_version }}" >> $GITHUB_OUTPUT
-          echo "ref=${{ inputs.ref }}" >> $GITHUB_OUTPUT
-        fi 
+        current_chart_version=$(yq .version $CHART_DIRECTORY/Chart.yaml)
+        target_chart_version=${{ steps.get_target_release.outputs.tag }}
 
-    - name: Update version in chart/Chart.yaml
-      id: update_chart_version
-      if: steps.check_release_existence.outputs.curl_output == 200 && github.event_name == 'workflow_dispatch'
-      run: |
-        version=${{ steps.prepare_version.outputs.version }} yq eval -i '.version = strenv(version)' chart/Chart.yaml
+        echo "Updating $CHART_DIRECTORY/Chart.yaml from $current_chart_version to $target_chart_version ..."
+        perl -pi -e "s#^version:.*#version: $target_chart_version#g" $CHART_DIRECTORY/Chart.yaml
 
-    - name: Commit changes
-      if: steps.update_chart_version.outcome == 'success'
+        if [ -z "$(git status --porcelain)" ]; then
+          echo "Nothing has changed; skipping commit/push ..."
+        else
+          git config user.name "${{ vars.WORKFLOW_USER_NAME }}"
+          git config user.email "${{ vars.WORKFLOW_USER_EMAIL }}"
+          git add -A
+          git commit -m "Bump chart version from $current_chart_version to $target_chart_version"
+          git push
+        fi
+
+    - name: Determine target commit
+      id: get_target_commit
       run: |
-        git config --global user.name github-actions
-        git config --global user.email github-actions@github.com
-        git pull
-        git add -A
-        git commit -m "Bump version(s) in helm chart" || true //do not throw error, when nothing to commit
-        git push
+        sha=$(git rev-parse HEAD)
+        echo "Target commit: $sha"
+        echo "sha=$sha" >> $GITHUB_OUTPUT
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ steps.prepare_version.outputs.version }}
+        tag_name: ${{ steps.get_target_release.outputs.tag }}
         draft: false
         prerelease: false
-        target_commitish: ${{ steps.prepare_version.outputs.ref }}
+        target_commitish: ${{ steps.get_target_commit.outputs.sha }}
         token: ${{ secrets.WORKFLOW_USER_GH_TOKEN }}
         generate_release_notes: false
