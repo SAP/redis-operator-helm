@@ -4,8 +4,7 @@ on:
   release:
     types: [published]
 
-# note: we do not use any concurrency here, in order to avoid queued release workflows being cancelled by
-# higher priority push/pull_request workflows
+concurrency: release-${{ github.event.release.tag_name }}
 
 env:
   HELM_VERSION: v3.11.3

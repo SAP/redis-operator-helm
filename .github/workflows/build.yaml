@@ -1,0 +1,56 @@
+name: Build artifacts
+
+on:
+  push:
+    branches:
+    - main
+
+  pull_request:
+    branches:
+    - main
+
+concurrency: build-${{ github.ref }}
+
+# TODO
+env:
+  HELM_VERSION: v3.11.3
+  KIND_VERSION: v0.19.0
+  CHART_DIRECTORY: chart
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - uses: azure/setup-helm@v3
+      with:
+       version: ${{ env.HELM_VERSION }}
+
+    - name: Lint Helm chart
+      run: |
+        helm lint $CHART_DIRECTORY
+
+    - name: Create Kind cluster
+      uses: helm/kind-action@v1
+      with:
+        version: ${{ env.KIND_VERSION }}
+        cluster_name: kind
+
+    - name: Show Kubernetes version
+      run: |
+        kubectl version
+
+    - name: Install Helm chart and run Helm tests
+      run: |
+        release_name=$(yq .name $CHART_DIRECTORY/Chart.yaml)
+        kubectl create ns operator-system
+        helm -n operator-system upgrade -i $release_name --wait --timeout 5m $CHART_DIRECTORY
+        helm -n operator-system test $release_name
