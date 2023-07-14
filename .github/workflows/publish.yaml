@@ -133,8 +133,8 @@ jobs:
       run: |
         chart_name=$(yq .name $CHART_DIRECTORY/Chart.yaml)
         file=$chart_name-${{ github.event.release.tag_name }}.tgz
-        repository=${{ github.repository }}
-        helm --registry-config $RUNNER_TEMP/helm-config.json push $file oci://$REGISTRY/${repository,,}
+        repository=$REGISTRY/${{ github.repository }}
+        helm --registry-config $RUNNER_TEMP/helm-config.json push $file oci://${repository,,}
 
   update-cop:
     name: Update component operator
