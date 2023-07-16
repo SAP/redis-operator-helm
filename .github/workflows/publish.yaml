@@ -44,7 +44,7 @@ jobs:
       pages: write
       id-token: write
     concurrency:
-      group: "pages"
+      group: pages
       cancel-in-progress: false
     environment:
       name: github-pages

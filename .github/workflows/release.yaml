@@ -20,7 +20,7 @@ on:
 concurrency: trigger-release
 
 env:
-  TAG_PREFIX: ""
+  TAG_PREFIX: ''
   INITIAL_TAG: 0.1.0
   SEMVER_VERSION: 3.4.0
   HELM_DOCS_VERSION: v1.11.0
