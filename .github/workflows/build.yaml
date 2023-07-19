@@ -11,7 +11,6 @@ on:
 
 concurrency: build-${{ github.ref }}
 
-# TODO
 env:
   HELM_VERSION: v3.11.3
   KIND_VERSION: v0.19.0
@@ -54,3 +53,4 @@ jobs:
         kubectl create ns operator-system
         helm -n operator-system upgrade -i $release_name --wait --timeout 5m $CHART_DIRECTORY
         helm -n operator-system test $release_name
+

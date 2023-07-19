@@ -237,5 +237,3 @@ jobs:
         token: ${{ secrets.WORKFLOW_USER_GH_TOKEN }}
         inputs: '{ "version-bump": "${{ steps.update.outputs.version_bump}}" }'
 
-
-
