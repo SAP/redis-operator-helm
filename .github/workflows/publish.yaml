@@ -31,7 +31,7 @@ jobs:
       run: |
         chart_version=$(yq .version $CHART_DIRECTORY/Chart.yaml)
         if [ "$chart_version" != "${{ github.event.release.tag_name }}" ]; then
-          >&1 echo "Version in $CHART_DIRECTORY/Chart.yaml ($chart_version) does not match release version (${{ github.event.release.tag_name }})."
+          >&2 echo "Version in $CHART_DIRECTORY/Chart.yaml ($chart_version) does not match release version (${{ github.event.release.tag_name }})."
           exit 1
         fi
 
@@ -195,13 +195,13 @@ jobs:
 
         old_version=$(yq .version $cop_chart_base_directory/$chart_name/Chart.yaml)
         if [ "$(semver validate ${old_version/#[vV]/_})" != valid ]; then
-          >&1 echo "Found invalid current chart version ($old_version) in $cop_chart_base_directory/$chart_name/Chart.yaml)."
+          >&2 echo "Found invalid current chart version ($old_version) in $cop_chart_base_directory/$chart_name/Chart.yaml)."
           exit 1
         fi
 
         new_version=${{ github.event.release.tag_name }}
         if [ "$(semver validate ${new_version/#[vV]/_})" != valid ]; then
-          >&1 echo "Invalid target chart version ($new_version)."
+          >&2 echo "Invalid target chart version ($new_version)."
           exit 1
         fi
 
@@ -239,6 +239,9 @@ jobs:
 
         echo "version_bump=$version_bump" >> $GITHUB_OUTPUT
 
+        # add some safety sleep to overcome github race conditions
+        sleep 10s
+
     - name: Release component operator repository
       if: steps.update.outputs.version_bump != ''
       uses: benc-uk/workflow-dispatch@v1
@@ -247,5 +250,5 @@ jobs:
         workflow: release.yaml
         ref: main
         token: ${{ secrets.WORKFLOW_USER_GH_TOKEN }}
-        inputs: '{ "version-bump": "${{ steps.update.outputs.version_bump}}" }'
+        inputs: '{ "version-bump": "${{ steps.update.outputs.version_bump }}" }'
 
