@@ -25,7 +25,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Validate chart version
       run: |
@@ -52,7 +52,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
@@ -67,7 +67,7 @@ jobs:
         fi
 
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         ref: helm-index
         path: index
@@ -127,7 +127,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - uses: azure/setup-helm@v3
       with:
@@ -170,10 +170,10 @@ jobs:
         echo "cop_chart_base_directory=$cop_chart_base_directory" >> $GITHUB_OUTPUT
 
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Checkout component operator repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         repository: ${{ steps.prepare.outputs.cop_repository }}
         path: cop-repository
