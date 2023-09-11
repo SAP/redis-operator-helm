@@ -64,6 +64,7 @@ jobs:
           git config user.email "${{ vars.WORKFLOW_USER_EMAIL }}"
           git commit --allow-empty -m "Initial commit"
           git push --set-upstream origin helm-index
+          git checkout main
         fi
 
     - name: Checkout repository
