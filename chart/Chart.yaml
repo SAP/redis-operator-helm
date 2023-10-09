@@ -3,4 +3,4 @@ name: redis-operator
 description: A Helm chart for https://github.com/sap/redis-operator
 type: application
 version: 0.1.10
-appVersion: v0.1.9
+appVersion: v0.1.10
