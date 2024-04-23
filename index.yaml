@@ -3,6 +3,16 @@ entries:
   redis-operator:
   - apiVersion: v2
     appVersion: v0.1.28
+    created: "2024-04-23T08:05:19.165208603Z"
+    description: A Helm chart for https://github.com/sap/redis-operator
+    digest: 3e51ae3aa37a55a7875bc863f5f00f073fd29138e2ffbcc56ab613398f7f8149
+    name: redis-operator
+    type: application
+    urls:
+    - https://github.com/SAP/redis-operator-helm/releases/download/0.1.31/redis-operator-0.1.31.tgz
+    version: 0.1.31
+  - apiVersion: v2
+    appVersion: v0.1.28
     created: "2024-04-18T08:25:12.662710244Z"
     description: A Helm chart for https://github.com/sap/redis-operator
     digest: 20def839b8e85d52afe502bcf229d95d4428875259b378326911a9f83eccc0ea
@@ -311,4 +321,4 @@ entries:
     urls:
     - https://github.com/SAP/redis-operator-helm/releases/download/0.1.0/redis-operator-0.1.0.tgz
     version: 0.1.0
-generated: "2024-04-18T08:25:12.660209557Z"
+generated: "2024-04-23T08:05:19.16193989Z"
