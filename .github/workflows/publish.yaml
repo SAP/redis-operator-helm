@@ -21,7 +21,7 @@ defaults:
 jobs:
   validate:
     name: Run validations
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Checkout repository
@@ -37,7 +37,7 @@ jobs:
 
   publish-to-pages:
     name: Publish chart to github pages
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs: validate
     permissions:
       contents: write
@@ -78,7 +78,7 @@ jobs:
        version: ${{ env.HELM_VERSION }}
 
     - name: Setup Pages
-      uses: actions/configure-pages@v4
+      uses: actions/configure-pages@v5
 
     - name: Create package
       run: |
@@ -120,7 +120,7 @@ jobs:
 
   publish-to-packages:
     name: Publish chart to github packages
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs: validate
     permissions:
       contents: read
@@ -151,7 +151,7 @@ jobs:
 
   update-cop:
     name: Update component operator
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs: validate
 
     steps:
