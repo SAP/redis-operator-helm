@@ -49,6 +49,10 @@ jobs:
 
     - name: Install Helm chart and run Helm tests
       run: |
+        if [ -f $CHART_DIRECTORY/.setup.yaml ]; then
+          kubectl apply --server-side --field-manager integration-test --force-conflicts -f $CHART_DIRECTORY/.setup.yaml
+          sleep 5
+        fi
         release_name=$(yq .name $CHART_DIRECTORY/Chart.yaml)
         kubectl create ns operator-system
         helm -n operator-system upgrade -i $release_name --wait --timeout 5m $CHART_DIRECTORY
