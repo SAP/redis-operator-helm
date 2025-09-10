@@ -27,7 +27,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - uses: azure/setup-helm@v4
       with:
@@ -57,4 +57,3 @@ jobs:
         kubectl create ns operator-system
         helm -n operator-system upgrade -i $release_name --wait --timeout 5m $CHART_DIRECTORY
         helm -n operator-system test $release_name
-
