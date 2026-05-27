@@ -152,6 +152,7 @@ jobs:
   update-cop:
     name: Update component operator
     runs-on: ubuntu-24.04
+    environment: release
     needs: validate
 
     steps:
