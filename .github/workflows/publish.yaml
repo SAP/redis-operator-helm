@@ -25,7 +25,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
     - name: Validate chart version
       run: |
@@ -52,7 +52,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         fetch-depth: 0
 
@@ -68,17 +68,17 @@ jobs:
         fi
 
     - name: Checkout repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         ref: helm-index
         path: index
 
-    - uses: azure/setup-helm@v4
+    - uses: azure/setup-helm@v5
       with:
        version: ${{ env.HELM_VERSION }}
 
     - name: Setup Pages
-      uses: actions/configure-pages@v5
+      uses: actions/configure-pages@v6
 
     - name: Create package
       run: |
@@ -110,13 +110,13 @@ jobs:
           "$upload_url?name=$(basename $file)"
 
     - name: Upload index
-      uses: actions/upload-pages-artifact@v4
+      uses: actions/upload-pages-artifact@v5
       with:
         path: index
 
     - name: Publish index
       id: publish-index
-      uses: actions/deploy-pages@v4
+      uses: actions/deploy-pages@v5
 
   publish-to-packages:
     name: Publish chart to github packages
@@ -128,9 +128,9 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
-    - uses: azure/setup-helm@v4
+    - uses: azure/setup-helm@v5
       with:
        version: ${{ env.HELM_VERSION }}
 
@@ -172,10 +172,10 @@ jobs:
         echo "cop_chart_base_directory=$cop_chart_base_directory" >> $GITHUB_OUTPUT
 
     - name: Checkout repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
     - name: Checkout component operator repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         repository: ${{ steps.prepare.outputs.cop_repository }}
         path: cop-repository
