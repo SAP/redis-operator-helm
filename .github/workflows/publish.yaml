@@ -7,7 +7,7 @@ on:
 concurrency: release-${{ github.event.release.tag_name }}
 
 env:
-  HELM_VERSION: v3.11.3
+  HELM_VERSION: v3.18.4
   SEMVER_VERSION: 3.4.0
   REGISTRY: ghcr.io
   CHART_DIRECTORY: chart
